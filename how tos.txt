@@ -1,0 +1,23 @@
+cmd1
+----
+testrpc (runs the test environment)
+
+
+cmd2
+----
+(path to truffle)/truffle compile		compiles the contracts
+(path to truffle)/truffle migrate		deploys the contracts to the test env
+(path to truffle)/truffle console		runs a console where we can execute commands against the test env
+
+C:\Users\fikre\AppData\Roaming\npm\truffle migrate
+
+
+
+
+----
+
+Get Abi for running web3
+
+truffle console in cmd2
+ DX25Test.deployed().then(p => JSON.stringify(p.abi))
+ DX25Test.deployed().then(d => JSON.stringify(d.address))

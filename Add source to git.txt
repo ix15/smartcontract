@@ -1,0 +1,2 @@
+git remote add origin https://fikre@bitbucket.org/fikre/dx25.git
+git push -u origin maste
