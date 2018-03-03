@@ -189,7 +189,7 @@ contract DX25Test {
 		
         require(balanceOf(participant) >= amountOfTokensToWithdraw);
         require(withdrawalRequests[participant].tokens == 0); // participant cannot have outstanding withdrawals
-        balances[participant] = safeAdd(balanceOf(participant), amountOfTokensToWithdraw);
+        balances[participant] = safeSub(balanceOf(participant), amountOfTokensToWithdraw);
         withdrawalRequests[participant] = WithdrawalRequest({tokens: amountOfTokensToWithdraw, time: previousUpdateTime});
         WithdrawalRequested_Event(participant, amountOfTokensToWithdraw);
     }
@@ -226,7 +226,7 @@ contract DX25Test {
 		// Make sure we have enough ether in the contract to send to the participant
 		assert(this.balance >= etherAmount);
 		// Move the DX25 tokens to the ether wallet
-		balances[etherWallet] = safeSub(balances[etherWallet], tokenAmount);
+		balances[etherWallet] = safeAdd(balances[etherWallet], tokenAmount);
 		// Send ether frmm the contract wallet to the participant
         participant.transfer(etherAmount);
         Withdrew_Event(participant, etherAmount, tokenAmount);

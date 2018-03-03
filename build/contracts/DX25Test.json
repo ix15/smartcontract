@@ -462,11 +462,79 @@
           ],
           "name": "Withdrew",
           "type": "event"
+        },
+        "0x759d80eff628732179407df89e4bbb07ad4ad17db719a7055d577965c2d92363": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "name": "newState",
+              "type": "string"
+            }
+          ],
+          "name": "StateChanged_Event",
+          "type": "event"
+        },
+        "0x5d037d67ee0accba82db3536e58a1774c6a4fb00702ad88de60f0904b4baddbd": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "name": "message",
+              "type": "string"
+            },
+            {
+              "indexed": false,
+              "name": "uint2561",
+              "type": "uint256"
+            }
+          ],
+          "name": "Logged_Event",
+          "type": "event"
+        },
+        "0x966d706529fa973e47df3f4651139a0fbe1bacc8f0a7129614bd588ef64e6594": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "name": "participant",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "name": "amountTokens",
+              "type": "uint256"
+            }
+          ],
+          "name": "WithdrawalRequested_Event",
+          "type": "event"
+        },
+        "0x83fafc9caa8c8fd696ff382c4e268b6ab7f5fd89630d285fee8f27e716d3ec11": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "name": "participant",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "name": "etherAmount",
+              "type": "uint256"
+            },
+            {
+              "indexed": false,
+              "name": "tokenAmount",
+              "type": "uint256"
+            }
+          ],
+          "name": "Withdrew_Event",
+          "type": "event"
         }
       },
       "links": {},
-      "address": "0x62c1c320fd0b8abbfa1c44415bfbaa47b2cfa4f7",
-      "updated_at": 1519685611548
+      "address": "0x07c67bea6194c9099f38e913741c87d10a72643b",
+      "updated_at": 1520100171638
     },
     "1518973065698": {
       "events": {},
@@ -831,5 +899,5 @@
     }
   },
   "schema_version": "0.0.5",
-  "updated_at": 1520099408049
+  "updated_at": 1520100171638
 }
