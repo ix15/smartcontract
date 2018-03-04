@@ -22,6 +22,7 @@ contract DX25Test {
 
     mapping (address => uint256) balances;
     mapping (address => WithdrawalRequest) withdrawalRequests;
+    mapping (address => bool) public whitelist;
 
     uint256 public previousUpdateTime = 0;
 
@@ -35,10 +36,16 @@ contract DX25Test {
 
     //mapping (address => bool) public whitelist;
 
- 	// modifier onlyWhitelist {
-    //     require(whitelist[msg.sender]);
-    //     _;
-    //}
+ 	modifier onlyWhitelist {
+        require(whitelist[msg.sender]);
+        _;
+    }
+
+	modifier onlyManagingWallets {
+        //require(msg.sender == controlWallet || msg.sender == fundWallet);
+        require(msg.sender == etherWallet);
+        _;
+    }
 
 	modifier onlyInvestors {
         require(balances[msg.sender] > 0);
@@ -54,6 +61,8 @@ contract DX25Test {
 		uint256 uint2561
     );
 
+    event Whitelisted_Event(address indexed participant);
+
 
     event WithdrawalRequested_Event(address indexed participant, uint256 amountTokens);
 
@@ -65,6 +74,7 @@ contract DX25Test {
 	function DX25Test() {
 		etherWallet = msg.sender;
 		previousUpdateTime = now;
+		whitelist[etherWallet] = true;
 	}
 
 	function getDecimals() constant returns (uint8) {
@@ -74,6 +84,15 @@ contract DX25Test {
 	function getName() constant returns (string) {
         return name;
     }
+
+	function verifyParticipant(address participant) external onlyManagingWallets {
+        whitelist[participant] = true;
+        Whitelisted_Event(participant);
+    }
+
+	function isInWhitelist(address participant) constant returns (bool) {
+		return whitelist[participant];
+	}
 
 	function getState() constant returns (string) {
 
@@ -108,7 +127,6 @@ contract DX25Test {
 	}
 
 
-
 	function getContractBalance() public constant returns (uint256) {
 		return this.balance;
 	}
@@ -130,8 +148,7 @@ contract DX25Test {
     }
 
 
-    //function depositTo(address participant) public payable onlyWhitelist {
-    function depositTo(address participant) public payable {
+    function depositTo(address participant) public payable onlyWhitelist {
         //require(!halted);
         require(participant != address(0));
         //require(msg.value >= minAmount);
@@ -177,8 +194,8 @@ contract DX25Test {
         return withdrawalRequests[participant].tokens;
     }
 
-	//function requestWithdrawal(uint256 amountTokensToWithdraw) external isTradeable onlyWhitelist {
-	function requestWithdrawal(uint256 amountOfTokensToWithdraw) external onlyInvestors {	
+	//function requestWithdrawal(uint256 amountOfTokensToWithdraw) external isTradeable onlyWhitelist {
+	function requestWithdrawal(uint256 amountOfTokensToWithdraw) external onlyWhitelist {
 
 		Logged_Event("requestWithdrawal", amountOfTokensToWithdraw);
 
@@ -194,7 +211,9 @@ contract DX25Test {
         WithdrawalRequested_Event(participant, amountOfTokensToWithdraw);
     }
 
-	function withdraw() external onlyInvestors {
+	// This onlyInvestor causes withdraw to fail if the participant withdrew everything (balance is 0 cause the tokens are in the withdrawalRequests list)
+	//function withdraw() external onlyInvestors {
+	function withdraw() external {
         address participant = msg.sender;
         uint256 tokenAmount = withdrawalRequests[participant].tokens;
         require(tokenAmount > 0); // participant must have requested a withdrawal
@@ -260,7 +279,7 @@ contract DX25Test {
 	function setVestingContract(address vestingContractInput) { //external onlyFundWallet {
         require(vestingContractInput != address(0));
         vestingContract = vestingContractInput;
-        //whitelist[vestingContract] = true;
+        whitelist[vestingContract] = true;
         //vestingSet = true;
     }
 
