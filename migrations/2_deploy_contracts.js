@@ -9,7 +9,6 @@ module.exports = function(deployer, network, accounts) {
   // deployer.deploy(ConvertLib);
   // deployer.link(ConvertLib, MetaCoin);
   // deployer.deploy(MetaCoin);
-  //deployer.deploy(People);
   
   // const controlWallet = accounts[1]
   const controlWallet = '0xFE4141fc06A2Af2f8585854dc0A00Fd6925c5D9e';
