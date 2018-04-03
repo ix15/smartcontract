@@ -19,5 +19,5 @@ C:\Users\fikre\AppData\Roaming\npm\truffle migrate
 Get Abi for running web3
 
 truffle console in cmd2
- DX25Test.deployed().then(p => JSON.stringify(p.abi))
- DX25Test.deployed().then(d => JSON.stringify(d.address))
+ IsonexTest.deployed().then(p => JSON.stringify(p.abi))
+ IsonexTest.deployed().then(d => JSON.stringify(d.address))
