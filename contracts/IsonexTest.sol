@@ -1,10 +1,3 @@
-// etherWallet contains the ether that is deposited
-// the etherWallet is used to deploy the contracts
-// the contract itself contains any ether that may be withdrawn by invetors (without requiring liquidation)
-
-
-
-
 // check this
 pragma solidity ^0.4.13;
 
@@ -31,6 +24,8 @@ contract IsonexTest {
     mapping (address => bool) public whitelist;
 
     Price public currentPrice;
+    uint256 public minAmount = 0.04 ether;
+
 	
 	 // crowdsale parameters
     uint256 public fundingStartBlock;
@@ -215,7 +210,7 @@ contract IsonexTest {
     function depositTo(address participant) public payable onlyWhitelist {
         //require(!halted);
         require(participant != address(0));
-        //require(msg.value >= minAmount);
+        require(msg.value >= minAmount);
         require(block.number >= fundingStartBlock && block.number < fundingEndBlock);
 		// require(state == ContractState.Ico);
         //uint256 icoDenominator = icoDenominatorPrice();
@@ -248,6 +243,15 @@ contract IsonexTest {
         totalSupply = safeAdd(totalSupply, newTokens);
         balances[participant] = safeAdd(balances[participant], amountTokens);
         balances[vestingContract] = safeAdd(balances[vestingContract], developmentAllocation);
+    }
+
+    function allocatePresaleTokens(address participant, uint amountTokens) external onlyFundWallet {
+        require(block.number < fundingEndBlock);
+        require(participant != address(0));
+        whitelist[participant] = true; // automatically whitelist accepted presale
+        allocateTokens(participant, amountTokens);
+        Whitelisted_Event(participant);(participant);
+        //AllocatePresale(participant, amountTokens);
     }
 
 	function balanceOf(address participant) constant returns (uint256 balance) {
@@ -353,13 +357,6 @@ contract IsonexTest {
     function addLiquidity() external onlyManagingWallets payable {
         require(msg.value > 0);
         AddLiquidity(msg.value);
-    }
-
-    // allow fundWallet to remove ether from contract
-    function removeLiquidity(uint256 amount) external onlyManagingWallets {
-        require(amount <= this.balance);
-        etherWallet.transfer(amount);
-        RemoveLiquidity(amount);
     }
 
     // allow fundWallet to remove ether from contract
