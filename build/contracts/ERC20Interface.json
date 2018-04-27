@@ -1,5 +1,5 @@
 {
-  "contract_name": "Token",
+  "contract_name": "ERC20Interface",
   "abi": [
     {
       "constant": false,
@@ -18,6 +18,19 @@
         {
           "name": "success",
           "type": "bool"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "totalSupply",
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256"
         }
       ],
       "payable": false,
@@ -159,5 +172,5 @@
   "unlinked_binary": "0x",
   "networks": {},
   "schema_version": "0.0.5",
-  "updated_at": 1524869778105
+  "updated_at": 1524871610652
 }

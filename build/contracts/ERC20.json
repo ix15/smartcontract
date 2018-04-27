@@ -1,6 +1,19 @@
 {
-  "contract_name": "Token",
+  "contract_name": "ERC20",
   "abi": [
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "name",
+      "outputs": [
+        {
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
     {
       "constant": false,
       "inputs": [
@@ -18,6 +31,19 @@
         {
           "name": "success",
           "type": "bool"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "totalSupply",
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256"
         }
       ],
       "payable": false,
@@ -51,9 +77,22 @@
     },
     {
       "constant": true,
+      "inputs": [],
+      "name": "decimals",
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "constant": true,
       "inputs": [
         {
-          "name": "_owner",
+          "name": "participant",
           "type": "address"
         }
       ],
@@ -62,6 +101,45 @@
         {
           "name": "balance",
           "type": "uint256"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "constant": false,
+      "inputs": [
+        {
+          "name": "_spender",
+          "type": "address"
+        },
+        {
+          "name": "_oldValue",
+          "type": "uint256"
+        },
+        {
+          "name": "_newValue",
+          "type": "uint256"
+        }
+      ],
+      "name": "changeApproval",
+      "outputs": [
+        {
+          "name": "success",
+          "type": "bool"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "symbol",
+      "outputs": [
+        {
+          "name": "",
+          "type": "string"
         }
       ],
       "payable": false,
@@ -159,5 +237,5 @@
   "unlinked_binary": "0x",
   "networks": {},
   "schema_version": "0.0.5",
-  "updated_at": 1524869778105
+  "updated_at": 1524871610652
 }
