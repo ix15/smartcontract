@@ -1,4 +1,4 @@
-pragma solidity ^0.4.13;
+pragma solidity ^0.4.20;
 
 contract ERC20Interface  {
     function balanceOf(address _owner) public constant returns (uint256 balance);
