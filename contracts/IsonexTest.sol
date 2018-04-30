@@ -17,7 +17,7 @@ contract IsonexTest is ERC20 {
     struct Price { uint256 numerator; uint256 denominator; } // The number of Isonex tokens per Ether
     Price public currentPrice;
     mapping (uint256 => Price) public priceHistory;
-    uint256 public previousPriceUpdateTime = 0;
+    uint256 public currentPriceTimeWindow = 0;
     uint256 public priceUpdateInterval = 1 hours; // The amount of time that the control wallet must wait between price updates
 
     uint256 public fundingStartBlock;
@@ -26,10 +26,11 @@ contract IsonexTest is ERC20 {
     address public etherWallet; // change this name - maybe main wallet
     address public controlWallet; // change this name - maybe limited wallet
     address public vestingContract; // change name?
+    bool private vestingSet = false;
 
     mapping (address => bool) public whitelist;
 
-    struct WithdrawalRequest { uint256 nummberOfTokens; uint256 time; } // time for each withdrawal is set to the previousPriceUpdateTime
+    struct WithdrawalRequest { uint256 nummberOfTokens; uint256 time; } // time for each withdrawal is set to the currentPriceTimeWindow
     mapping (address => WithdrawalRequest) withdrawalRequests;
 
     modifier onlyWhitelist {
@@ -53,7 +54,7 @@ contract IsonexTest is ERC20 {
     }
 
     modifier priceUpdateIntervalElapsed {
-        require(safeSub(now, priceUpdateInterval) >= previousPriceUpdateTime);
+        require(safeSub(now, priceUpdateInterval) >= currentPriceTimeWindow);
         _;
     }
 
@@ -68,29 +69,86 @@ contract IsonexTest is ERC20 {
     }
 
     event PriceUpdate(uint256 numerator, uint256 denominator);
+    event AllocatePresale(address indexed participant, uint256 numberOfTokens);
     event Whitelisted(address indexed participant);
-    event WithdrawalRequested(address indexed participant, uint256 amountTokens);
-    event Withdrew(address indexed participant, uint256 etherAmount, uint256 tokenAmount);
+    event WithdrawalRequested(address indexed participant, uint256 numberOfTokens);
+    event Withdrew(address indexed participant, uint256 etherAmount, uint256 numberOfTokens);
     event LiquidityAdded(uint256 ethAmount);
     event RemoveLiquidity(uint256 ethAmount);
-    event UserDeposited(address indexed participant, address indexed beneficiary, uint256 ethValue, uint256 amountTokens);
+    event UserDeposited(address indexed participant, address indexed beneficiary, uint256 ethValue, uint256 numberOfTokens);
 
-    function IsonexTest(address controlWalletInput) public {
-
+    function IsonexTest(address controlWalletInput, uint256 priceNumeratorInput) public {
+        require(controlWalletInput != address(0));
+        require(priceNumeratorInput > 0);
         name = "IsonexTest";
         symbol = "IX25Test";
         decimals = 18;
-
-        require(controlWalletInput != address(0));
         etherWallet = msg.sender;
-        previousPriceUpdateTime = now;
-        whitelist[etherWallet] = true;
-        currentPrice = Price(1000000, 1000); // 1 token = 1 usd at ICO start
         controlWallet = controlWalletInput;
+        whitelist[etherWallet] = true;
         whitelist[controlWallet] = true;
-
-        fundingStartBlock = block.number + 10;
+        currentPrice = Price(priceNumeratorInput, 1000); // 1 token = 1 usd at ICO start
+        fundingStartBlock = block.number + 10; // these should be parameters
         fundingEndBlock = block.number + 2666; // ~ 5 days on testnet
+        currentPriceTimeWindow = now; // maybe change to block number or something
+    }
+
+    
+    function setVestingContract(address vestingContractInput) external onlyFundWallet {
+        require(vestingContractInput != address(0));
+        vestingContract = vestingContractInput;
+        whitelist[vestingContract] = true;
+        vestingSet = true;
+    }
+
+    // allows controlWallet to update the price within a time contstraint, allows fundWallet complete control
+    function updatePrice(uint256 newNumerator) external onlyManagingWallets {
+        require(newNumerator > 0);
+        applySecondaryWalletChangeRestrictions(newNumerator);
+        currentPrice.numerator = newNumerator;
+        // maps time to new Price (if not during ICO)
+        priceHistory[currentPriceTimeWindow] = currentPrice;
+        currentPriceTimeWindow = now;
+        emit PriceUpdate(newNumerator, currentPrice.denominator);
+    }
+
+    // controlWallet can only increase price by max 20% and only every priceUpdateInterval
+    function applySecondaryWalletChangeRestrictions (uint256 newNumerator) private onlyControlWallet priceUpdateIntervalElapsed newNumeratorGreater(newNumerator) {
+        uint256 percentageDiff = safeSub(safeMul(newNumerator, 100) / currentPrice.numerator, 100);
+        require(percentageDiff <= 20);
+    }
+
+    function updatePriceDenominator(uint256 newDenominator) external onlyFundWallet {
+        require(block.number > fundingEndBlock);
+        require(newDenominator > 0);
+        currentPrice.denominator = newDenominator;
+        // maps time to new Price
+        priceHistory[currentPriceTimeWindow] = currentPrice;
+        currentPriceTimeWindow = now;
+        emit PriceUpdate(currentPrice.numerator, newDenominator);
+    }
+
+    function allocateTokens(address participant, uint256 numberOfTokens) private {
+        require(vestingSet);
+        // 10% of total allocated for PR, Marketing, Team, Advisors
+        uint256 additionTokens = safeMul(numberOfTokens, 11111111111111111) / 100000000000000000; // need to check that this is a 10% increase
+           
+        // check that token cap is not exceeded
+        uint256 totalNumberOfTokens = safeAdd(numberOfTokens, additionTokens);
+        require(safeAdd(totalSupply, totalNumberOfTokens) <= tokenCap);
+        // increase token supply, assign tokens to participant
+        totalSupply = safeAdd(totalSupply, totalNumberOfTokens);
+        balances[participant] = safeAdd(balances[participant], numberOfTokens);
+        balances[vestingContract] = safeAdd(balances[vestingContract], additionTokens);
+    }
+
+    function allocatePresaleTokens(address participant, uint numberOfTokens) external onlyFundWallet {
+        require(block.number < fundingEndBlock);
+        require(participant != address(0));
+        whitelist[participant] = true;
+        allocateTokens(participant, numberOfTokens);
+        emit Whitelisted(participant);
+        emit AllocatePresale(participant, numberOfTokens);
     }
 
     function verifyParticipant(address participant) external onlyManagingWallets {
@@ -98,197 +156,89 @@ contract IsonexTest is ERC20 {
         emit Whitelisted(participant);
     }
 
-    // I added this, maybe remove it
-    function isInWhitelist(address participant) external constant returns (bool) {
-        return whitelist[participant];
-    }
-
-    function getContractBalance() public constant returns (uint256) {
-        return this.balance;
-    }
-
-    function getEtherWalletBalance() public constant returns (uint256) {
-        return etherWallet.balance;
-    }
-
-    function getVestingContractBalance() public constant returns (uint256) {
-        return balances[vestingContract];
-    }
-
     function deposit() external payable {
         depositTo(msg.sender);
     }
-
-    function getIcoDenominator() public constant returns (uint256) {
-        uint256 icoDuration = safeSub(block.number, fundingStartBlock);
-        uint256 denominator;
-        //if (icoDuration < 2880) { // #blocks = 24*60*60/30 = 2880
-        if (icoDuration < 10) { // #blocks = 24*60*60/30 = 2880
-            return currentPrice.denominator;
-        //} else if (icoDuration < 80640 ) { // #blocks = 4*7*24*60*60/30 = 80640
-        } else if (icoDuration < 20 ) { // #blocks = 4*7*24*60*60/30 = 80640
-            denominator = safeMul(currentPrice.denominator, 105) / 100;
-            return denominator;
-        } else {
-            denominator = safeMul(currentPrice.denominator, 110) / 100;
-            return denominator;
-        }
-    }
-
+    
     function depositTo(address participant) public payable onlyWhitelist {
-        //require(!halted);
+        require(!halted);
         require(participant != address(0));
         require(msg.value >= minDepositAmount);
         require(block.number >= fundingStartBlock && block.number < fundingEndBlock);
-        //uint256 icoDenominator = icoDenominatorPrice();
-        //uint256 tokensToBuy = safeMul(msg.value, currentPrice.numerator) / icoDenominator;
-		
-		uint256 tokensToBuy = safeMul(msg.value, currentPrice.numerator) / getIcoDenominator();
-
-        //allocateTokens(participant, tokensToBuy);
+        uint256 tokensToBuy = safeMul(msg.value, currentPrice.numerator) / getStagedDenominator();
         allocateTokens(participant, tokensToBuy);
-		
         // send ether to fundWallet
-        //fundWallet.transfer(msg.value);
         etherWallet.transfer(msg.value);
-		
         //Buy(msg.sender, participant, msg.value, tokensToBuy);
-        emit UserDeposited(msg.sender, participant, msg.value, msg.value);
+        emit UserDeposited(msg.sender, participant, msg.value, tokensToBuy);
     }
 
-    function allocateTokens(address participant, uint256 amountTokens) private {
-        //require(vestingSet);
-        // 13% of total allocated for PR, Marketing, Team, Advisors
-       	//uint256 developmentAllocation = safeMul(amountTokens, 14942528735632185) / 100000000000000000;
-        uint256 developmentAllocation = safeMul(amountTokens, 11111111111111111) / 100000000000000000; // need to check that this is a 10% increase
-           
-        // check that token cap is not exceeded
-        uint256 newTokens = safeAdd(amountTokens, developmentAllocation);
-        require(safeAdd(totalSupply, newTokens) <= tokenCap);
-        // increase token supply, assign tokens to participant
-        totalSupply = safeAdd(totalSupply, newTokens);
-        balances[participant] = safeAdd(balances[participant], amountTokens);
-        balances[vestingContract] = safeAdd(balances[vestingContract], developmentAllocation);
+    function getStagedDenominator() public constant returns (uint256) {
+        uint256 blocksSinceFundingStartBlock = safeSub(block.number, fundingStartBlock);
+        //if (icoDuration < 2880) { // #blocks = 24*60*60/30 = 2880
+        if (blocksSinceFundingStartBlock < 10) {
+            return currentPrice.denominator;
+        //} else if (icoDuration < 80640 ) { // #blocks = 4*7*24*60*60/30 = 80640
+        } else if (blocksSinceFundingStartBlock < 20 ) {
+            return safeMul(currentPrice.denominator, 105) / 100;
+        } else {
+            return safeMul(currentPrice.denominator, 110) / 100;
+        }
     }
 
-    function allocatePresaleTokens(address participant, uint amountTokens) external onlyFundWallet {
-        require(block.number < fundingEndBlock);
-        require(participant != address(0));
-        whitelist[participant] = true; // automatically whitelist accepted presale
-        allocateTokens(participant, amountTokens);
-        emit Whitelisted(participant);
-        //AllocatePresale(participant, amountTokens);
-    }
 
-    function halt() external onlyFundWallet {
-        halted = true;
-    }
 
-    function unhalt() external onlyFundWallet {
-        halted = false;
-    }
 
-    function enableTrading() external onlyFundWallet {
-        require(block.number > fundingEndBlock);
-        tradeable = true;
-    }
 
-    function pendingWithdrawalRequestOf(address participant) constant returns (uint256 tokens) {
-        return withdrawalRequests[participant].nummberOfTokens;
-    }
 
-	//function requestWithdrawal(uint256 amountOfTokensToWithdraw) external isTradeable onlyWhitelist {
-    function requestWithdrawal(uint256 amountOfTokensToWithdraw) external onlyWhitelist {
-
+    function requestWithdrawal(uint256 amountOfTokensToWithdraw) external isTradeable onlyWhitelist {
         require(block.number > fundingEndBlock);
         require(amountOfTokensToWithdraw > 0);
-
         address participant = msg.sender;
-		
         require(balanceOf(participant) >= amountOfTokensToWithdraw);
         require(withdrawalRequests[participant].nummberOfTokens == 0); // participant cannot have outstanding withdrawals
         balances[participant] = safeSub(balanceOf(participant), amountOfTokensToWithdraw);
-        withdrawalRequests[participant] = WithdrawalRequest({nummberOfTokens: amountOfTokensToWithdraw, time: previousPriceUpdateTime});
+        withdrawalRequests[participant] = WithdrawalRequest({nummberOfTokens: amountOfTokensToWithdraw, time: currentPriceTimeWindow});
         emit WithdrawalRequested(participant, amountOfTokensToWithdraw);
     }
 
     function withdraw() external {
         address participant = msg.sender;
-        uint256 tokenAmount = withdrawalRequests[participant].nummberOfTokens;
-        require(tokenAmount > 0); // participant must have requested a withdrawal
+        uint256 nummberOfTokens = withdrawalRequests[participant].nummberOfTokens;
+        require(nummberOfTokens > 0); // participant must have requested a withdrawal
         uint256 requestTime = withdrawalRequests[participant].time;
         // obtain the next price that was set after the request
         Price price = priceHistory[requestTime];
         require(price.numerator > 0); // price must have been set
-        //uint256 withdrawValue = safeMul(tokens, price.denominator) / price.numerator;
-
-        uint256 etherAmount = safeMul(tokenAmount, currentPrice.denominator) / currentPrice.numerator;
-
+        uint256 etherAmount = safeMul(nummberOfTokens, price.denominator) / price.numerator;
         withdrawalRequests[participant].nummberOfTokens = 0;
 		
+        // Make sure we have enough ether in the contract to send to the participant
+        assert(this.balance >= etherAmount);
+
         // if contract ethbal > then send + transfer tokens to fundWallet, otherwise give tokens back
-        //if (this.balance >= withdrawValue)
-        //    enact_withdrawal_greater_equal(participant, withdrawValue, tokens);
-        //else
-            //enact_withdrawal_less(participant, withdrawValue, tokens);
-        
-		enact_withdrawal_greater_equal(participant, etherAmount, tokenAmount);
+        if (this.balance >= etherAmount) {
+            // Move the Isonex tokens to the ether wallet
+            balances[etherWallet] = safeAdd(balances[etherWallet], nummberOfTokens);
+            // Send ether from the contract wallet to the participant
+            participant.transfer(etherAmount);
+            emit Withdrew(participant, etherAmount, nummberOfTokens);
+        }
+        else {
+            balances[participant] = safeAdd(balances[participant], nummberOfTokens);
+            emit Withdrew(participant, etherAmount, 0); // failed withdrawal
+        }
     }
 
-    function updateFundingStartBlock(uint256 newFundingStartBlock) external onlyFundWallet {
-       //require(block.number < fundingStartBlock);
-        //require(block.number < newFundingStartBlock);
-        fundingStartBlock = newFundingStartBlock;
+    function checkWithdrawValue(uint256 amountTokensToWithdraw) public constant returns (uint256 etherValue) {
+        require(amountTokensToWithdraw > 0);
+        require(balanceOf(msg.sender) >= amountTokensToWithdraw);
+        uint256 withdrawValue = safeMul(amountTokensToWithdraw, currentPrice.denominator) / currentPrice.numerator;
+        require(this.balance >= withdrawValue);
+        return withdrawValue;
     }
 
-    function updateFundingEndBlock(uint256 newFundingEndBlock) external onlyFundWallet {
-        //require(block.number < fundingEndBlock);
-        //require(block.number < newFundingEndBlock);
-        fundingEndBlock = newFundingEndBlock;
-    }
-
-	// allows controlWallet to update the price within a time contstraint, allows fundWallet complete control
-    function updatePrice(uint256 newNumerator) external onlyManagingWallets {
-        require(newNumerator > 0);
-        require_limited_change(newNumerator);
-        // either controlWallet command is compliant or transaction came from fundWallet
-        currentPrice.numerator = newNumerator;
-        // maps time to new Price (if not during ICO)
-        priceHistory[previousPriceUpdateTime] = currentPrice;
-        previousPriceUpdateTime = now;
-        emit PriceUpdate(newNumerator, currentPrice.denominator);
-    }
-
-    function require_limited_change (uint256 newNumerator)
-        private
-        onlyControlWallet
-        priceUpdateIntervalElapsed
-        newNumeratorGreater(newNumerator)
-    {
-        uint256 percentage_diff = 0;
-        percentage_diff = safeMul(newNumerator, 100) / currentPrice.numerator;
-        percentage_diff = safeSub(percentage_diff, 100);
-        // controlWallet can only increase price by max 20% and only every priceUpdateInterval
-        require(percentage_diff <= 20);
-    }
-
-    function enact_withdrawal_greater_equal(address participant, uint256 etherAmount, uint256 tokenAmount) private {
-		// assert(this.balance >= withdrawValue);
-        // balances[fundWallet] = safeAdd(balances[fundWallet], tokens);
-        // participant.transfer(withdrawValue);
-        // Withdraw(participant, tokens, withdrawValue);
-
-		// Make sure we have enough ether in the contract to send to the participant
-		assert(this.balance >= etherAmount);
-		// Move the Isonex tokens to the ether wallet
-		balances[etherWallet] = safeAdd(balances[etherWallet], tokenAmount);
-		// Send ether frmm the contract wallet to the participant
-        participant.transfer(etherAmount);
-        emit Withdrew(participant, etherAmount, tokenAmount);
-    }
-
-	
-	// allow fundWallet or controlWallet to add ether to contract
+    // allow fundWallet or controlWallet to add ether to contract
     function addLiquidity() external onlyManagingWallets payable {
         require(msg.value > 0);
         emit LiquidityAdded(msg.value);
@@ -315,29 +265,44 @@ contract IsonexTest is ERC20 {
         priceUpdateInterval = newPriceUpdateInterval;
     }
 
-	// if ether is sent this contract, then handle it
+    function updateFundingStartBlock(uint256 newFundingStartBlock) external onlyFundWallet {
+        require(block.number < fundingStartBlock);
+        require(block.number < newFundingStartBlock);
+        fundingStartBlock = newFundingStartBlock;
+    }
+
+    function updateFundingEndBlock(uint256 newFundingEndBlock) external onlyFundWallet {
+        require(block.number < fundingEndBlock);
+        require(block.number < newFundingEndBlock);
+        fundingEndBlock = newFundingEndBlock;
+    }
+
+    function halt() external onlyFundWallet {
+        halted = true;
+    }
+
+    function unhalt() external onlyFundWallet {
+        halted = false;
+    }
+
+    function enableTrading() external onlyFundWallet {
+        require(block.number > fundingEndBlock);
+        tradeable = true;
+    }
+
+    // if ether is sent this contract, then handle it
     function() public payable {
-		// TODO: why do we need this check	
-        require(tx.origin == msg.sender);
+		// TODO: why do we need this check. Consider removing it. Complier is complaining and online they say to never use origin
+        //require(tx.origin == msg.sender); // important to find out what this is?? maybe this is why we never got transactions?????????????
         depositTo(msg.sender);
     }
 
-
-    function kill() external {
-
-		// very bad, anyone can kill it and the ether is not even going back to the owner!!!!
-       	//if (owner == msg.sender) {
-          selfdestruct(etherWallet);
-       //}
+    function claimTokens(address _token) external onlyFundWallet {
+        require(_token != address(0));
+        ERC20Interface token = ERC20Interface(_token);
+        uint256 balance = token.balanceOf(this);
+        token.transfer(etherWallet, balance);
     }
-
-    function setVestingContract(address vestingContractInput) { //external onlyFundWallet {
-        require(vestingContractInput != address(0));
-        vestingContract = vestingContractInput;
-        whitelist[vestingContract] = true;
-        //vestingSet = true;
-    }
-
 
     // prevent transfers until trading allowed
     function transfer(address _to, uint256 _value) public isTradeable returns (bool success) {
@@ -350,8 +315,25 @@ contract IsonexTest is ERC20 {
 	
 
 
-	
+    // I added these, remove them
+    function isInWhitelist(address participant) external constant returns (bool) {
+        return whitelist[participant];
+    }
 
-    
+    function getContractBalance() public constant returns (uint256) {
+        return this.balance;
+    }
+
+    function getEtherWalletBalance() public constant returns (uint256) {
+        return etherWallet.balance;
+    }
+
+    function getVestingContractBalance() public constant returns (uint256) {
+        return balances[vestingContract];
+    }
+
+    function pendingWithdrawalRequestOf(address participant) constant returns (uint256 tokens) {
+        return withdrawalRequests[participant].nummberOfTokens;
+    }
 
 }
