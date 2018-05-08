@@ -1,5 +1,9 @@
 pragma solidity ^0.4.20;
 // check public fields
+// make sure name is still accessible
+// do we need totalSupply()?
+// change fundingstart to icostart? or maybe
+
 
 import "./ERC20.sol";
 
@@ -77,7 +81,7 @@ contract IsonexTest is ERC20 {
     event RemoveLiquidity(uint256 ethAmount);
     event UserDeposited(address indexed participant, address indexed beneficiary, uint256 ethValue, uint256 numberOfTokens);
 
-    function IsonexTest(address controlWalletInput, uint256 priceNumeratorInput) public {
+    function IsonexTest(address controlWalletInput, uint256 priceNumeratorInput, uint256 fundingStartBlockInput, uint256 fundingEndBlockInput) public {
         require(controlWalletInput != address(0));
         require(priceNumeratorInput > 0);
         name = "IsonexTest";
@@ -88,8 +92,8 @@ contract IsonexTest is ERC20 {
         whitelist[etherWallet] = true;
         whitelist[controlWallet] = true;
         currentPrice = Price(priceNumeratorInput, 1000); // 1 token = 1 usd at ICO start
-        fundingStartBlock = block.number + 10; // these should be parameters
-        fundingEndBlock = block.number + 2666; // ~ 5 days on testnet
+        fundingStartBlock = fundingStartBlockInput;
+        fundingEndBlock = fundingEndBlockInput;
         currentPriceTimeWindow = now; // maybe change to block number or something
     }
 
@@ -140,6 +144,7 @@ contract IsonexTest is ERC20 {
         totalSupply = safeAdd(totalSupply, totalNumberOfTokens);
         balances[participant] = safeAdd(balances[participant], numberOfTokens);
         balances[vestingContract] = safeAdd(balances[vestingContract], additionTokens);
+        emit Transfer(address(0), participant, numberOfTokens); // Added this so that token ownership is shown in etherscan
     }
 
     function allocatePresaleTokens(address participant, uint numberOfTokens) external onlyFundWallet {
@@ -176,10 +181,10 @@ contract IsonexTest is ERC20 {
     function getStagedDenominator() public constant returns (uint256) {
         uint256 blocksSinceFundingStartBlock = safeSub(block.number, fundingStartBlock);
         //if (icoDuration < 2880) { // #blocks = 24*60*60/30 = 2880
-        if (blocksSinceFundingStartBlock < 10) {
+        if (blocksSinceFundingStartBlock < 5760) { //24*60*60/15 1 Day
             return currentPrice.denominator;
         //} else if (icoDuration < 80640 ) { // #blocks = 4*7*24*60*60/30 = 80640
-        } else if (blocksSinceFundingStartBlock < 20 ) {
+        } else if (blocksSinceFundingStartBlock < 11520 ) { // 2 Days
             return safeMul(currentPrice.denominator, 105) / 100;
         } else {
             return safeMul(currentPrice.denominator, 110) / 100;
