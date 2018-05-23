@@ -1,5 +1,5 @@
 var IsonexTest = artifacts.require("./IsonexTest.sol");
-var TokenValault = artifacts.require("./TokenValault.sol");
+var TokenVault = artifacts.require("./TokenVault.sol");
 Promise.allNamed = require("../utils/sequentialPromiseNamed.js")
 
 module.exports = function(deployer, network, accounts) {
@@ -43,16 +43,16 @@ module.exports = function(deployer, network, accounts) {
   
   
     deployer.deploy(IsonexTest, controlWallet, priceNumerator, fundingStartBlock, fundingEndBlock).then(() => {
-      return deployer.deploy(TokenValault, IsonexTest.address, fundingEndBlock);
+      return deployer.deploy(TokenVault, IsonexTest.address, fundingEndBlock);
     }).then(() => {
   
       return Promise.allNamed({
         isonexTestI: () => IsonexTest.deployed(),
-        tokenValaultI: () => TokenValault.deployed()
+        tokenVaultI: () => TokenVault.deployed()
       });
   
     }).then(instances => {
-      instances.isonexTestI.setVestingContract(instances.tokenValaultI.address);
+      instances.isonexTestI.setVestingContract(instances.tokenVaultI.address);
     });
 
   });

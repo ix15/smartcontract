@@ -2,7 +2,7 @@ pragma solidity ^0.4.20;
 
 import "./ERC20Interface.sol";
 
-contract TokenValault {
+contract TokenVault {
 
     ERC20Interface public IsonexContract;
     address beneficiary;
@@ -30,7 +30,7 @@ contract TokenValault {
         fourthRelease
     }
 
-    function TokenValault(address _contractAddress, uint256 fundingEndBlockInput) public {
+    function TokenVault(address _contractAddress, uint256 fundingEndBlockInput) public {
         require(_contractAddress != address(0));
         IsonexContract = ERC20Interface(_contractAddress);
         beneficiary = msg.sender;
@@ -59,10 +59,10 @@ contract TokenValault {
         require(block.number > fundingEndBlock);
         uint256 balance = IsonexContract.balanceOf(this);
         // in reverse order so stages changes don't carry within one claim
-        //fourth_release(balance);
-        //third_release(balance);
-        //second_release(balance);
-        //first_release(balance);
+        fourth_release(balance);
+        third_release(balance);
+        second_release(balance);
+        first_release(balance);
         init_claim(balance);
     }
 
