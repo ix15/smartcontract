@@ -1,19 +1,14 @@
 pragma solidity ^0.4.20;
 // check public fields
-// make sure name is still accessible
-// do we need totalSupply()?
 // change fundingstart to icostart? or maybe
-
 
 import "./ERC20.sol";
 
 contract IsonexTest is ERC20 {
 
-    //uint256 public tokenCap = 114942528 * 10**18; // using a 13% share for team. We probably want to change this to 10
-
     uint256 public tokenCap = 111111111 * 10**18;
 
-    uint256 public minDepositAmount = 0.04 ether; // The minimum amount of ether allowed when depositing using the depositTo function
+    uint256 public minDepositAmount = 0.04 ether;
 
     bool public halted = false;
     bool public tradeable = false;
