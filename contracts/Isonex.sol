@@ -1,12 +1,13 @@
 pragma solidity ^0.4.20;
 // check public fields
 // change fundingstart to icostart? or maybe
+// Set claiming period to 26 weeks  
 
 import "./ERC20.sol";
 
 contract IsonexTest is ERC20 {
 
-    uint256 public tokenCap = 111111111 * 10**18;
+    uint256 public tokenCap = 110000000 * 10**18;
 
     uint256 public minDepositAmount = 0.04 ether;
 
@@ -127,10 +128,16 @@ contract IsonexTest is ERC20 {
         emit PriceUpdate(currentPrice.numerator, newDenominator);
     }
 
+    // 9.090909090909091 % of 99 => 9% of 100
+    // 9.090909090909091*(X+Y)/100=Y
+    // X=100Y/9.090909090909091 - y
+    // X = 11Y - Y
+    // Y = X/10
+    
     function allocateTokens(address participant, uint256 numberOfTokens) private {
         require(vestingSet);
-        // 10% of total allocated for PR, Marketing, Team, Advisors
-        uint256 additionTokens = safeMul(numberOfTokens, 11111111111111111) / 100000000000000000; // need to check that this is a 10% increase
+        // 9.090909090909091% of total allocated for PR, Marketing, Team, Advisors
+        uint256 additionTokens = numberOfTokens / 10;
            
         // check that token cap is not exceeded
         uint256 totalNumberOfTokens = safeAdd(numberOfTokens, additionTokens);
@@ -140,6 +147,7 @@ contract IsonexTest is ERC20 {
         balances[participant] = safeAdd(balances[participant], numberOfTokens);
         balances[vestingContract] = safeAdd(balances[vestingContract], additionTokens);
         emit Transfer(address(0), participant, numberOfTokens); // Added this so that token ownership is shown in etherscan
+        emit Transfer(address(0), vestingContract, additionTokens);
     }
 
     function allocatePresaleTokens(address participant, uint numberOfTokens) external onlyFundWallet {
