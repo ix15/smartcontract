@@ -1,12 +1,12 @@
 pragma solidity ^0.4.20;
 // check public fields
-// change fundingstart to icostart? or maybe
 // Set claiming period to 26 weeks  
 
 import "./ERC20.sol";
 
 contract IsonexTest is ERC20 {
 
+    // 10M + 100K 
     uint256 public tokenCap = 110000000 * 10**18;
 
     uint256 public minDepositAmount = 0.04 ether;
@@ -14,14 +14,18 @@ contract IsonexTest is ERC20 {
     bool public halted = false;
     bool public tradeable = false;
 
-    struct Price { uint256 numerator; uint256 denominator; } // The number of Isonex tokens per Ether
+    // The number of Isonex tokens per Ether
+    struct Price { uint256 numerator; uint256 denominator; } 
     Price public currentPrice;
+
     mapping (uint256 => Price) public priceHistory;
     uint256 public currentPriceTimeWindow = 0;
-    uint256 public priceUpdateInterval = 1 hours; // The amount of time that the secondary wallet must wait between price updates
 
-    uint256 public fundingStartBlock;
-    uint256 public fundingEndBlock;
+     // The amount of time that the secondary wallet must wait between price updates
+    uint256 public priceUpdateInterval = 1 hours;
+
+    uint256 public startBlock;
+    uint256 public endBlock;
 
     address public primaryWallet;
     address public secondaryWallet;
@@ -77,7 +81,7 @@ contract IsonexTest is ERC20 {
     event RemoveLiquidity(uint256 ethAmount);
     event UserDeposited(address indexed participant, address indexed beneficiary, uint256 ethValue, uint256 numberOfTokens);
 
-    function IsonexTest(address secondaryWalletInput, uint256 priceNumeratorInput, uint256 fundingStartBlockInput, uint256 fundingEndBlockInput) public {
+    function IsonexTest(address secondaryWalletInput, uint256 priceNumeratorInput, uint256 startBlockInput, uint256 endBlockInput) public {
         require(secondaryWalletInput != address(0));
         require(priceNumeratorInput > 0);
         name = "IsonexTest";
@@ -88,8 +92,8 @@ contract IsonexTest is ERC20 {
         whitelist[primaryWallet] = true;
         whitelist[secondaryWallet] = true;
         currentPrice = Price(priceNumeratorInput, 1000); // 1 token = 1 usd at ICO start
-        fundingStartBlock = fundingStartBlockInput;
-        fundingEndBlock = fundingEndBlockInput;
+        startBlock = startBlockInput;
+        endBlock = endBlockInput;
         currentPriceTimeWindow = now; // maybe change to block number or something
     }
 
@@ -119,7 +123,7 @@ contract IsonexTest is ERC20 {
     }
 
     function updatePriceDenominator(uint256 newDenominator) external onlyPrimaryWallet {
-        require(block.number > fundingEndBlock);
+        require(block.number > endBlock);
         require(newDenominator > 0);
         currentPrice.denominator = newDenominator;
         // maps time to new Price
@@ -151,7 +155,7 @@ contract IsonexTest is ERC20 {
     }
 
     function allocatePresaleTokens(address participant, uint numberOfTokens) external onlyPrimaryWallet {
-        require(block.number < fundingEndBlock);
+        require(block.number < endBlock);
         require(participant != address(0));
         whitelist[participant] = true;
         allocateTokens(participant, numberOfTokens);
@@ -172,7 +176,7 @@ contract IsonexTest is ERC20 {
         require(!halted);
         require(participant != address(0));
         require(msg.value >= minDepositAmount);
-        require(block.number >= fundingStartBlock && block.number < fundingEndBlock);
+        require(block.number >= startBlock && block.number < endBlock);
         uint256 tokensToBuy = safeMul(msg.value, currentPrice.numerator) / getStagedDenominator();
         allocateTokens(participant, tokensToBuy);
         // send ether to primaryWallet
@@ -182,12 +186,12 @@ contract IsonexTest is ERC20 {
     }
 
     function getStagedDenominator() public constant returns (uint256) {
-        uint256 blocksSinceFundingStartBlock = safeSub(block.number, fundingStartBlock);
+        uint256 blocksSinceStartBlock = safeSub(block.number, startBlock);
         //if (icoDuration < 2880) { // #blocks = 24*60*60/30 = 2880
-        if (blocksSinceFundingStartBlock < 5760) { //24*60*60/15 1 Day
+        if (blocksSinceStartBlock < 5760) { //24*60*60/15 1 Day
             return currentPrice.denominator;
         //} else if (icoDuration < 80640 ) { // #blocks = 4*7*24*60*60/30 = 80640
-        } else if (blocksSinceFundingStartBlock < 11520 ) { // 2 Days
+        } else if (blocksSinceStartBlock < 11520 ) { // 2 Days
             return safeMul(currentPrice.denominator, 105) / 100;
         } else {
             return safeMul(currentPrice.denominator, 110) / 100;
@@ -200,7 +204,7 @@ contract IsonexTest is ERC20 {
 
 
     function requestWithdrawal(uint256 amountOfTokensToWithdraw) external isTradeable onlyWhitelist {
-        require(block.number > fundingEndBlock);
+        require(block.number > endBlock);
         require(amountOfTokensToWithdraw > 0);
         address participant = msg.sender;
         require(balanceOf(participant) >= amountOfTokensToWithdraw);
@@ -273,16 +277,16 @@ contract IsonexTest is ERC20 {
         priceUpdateInterval = newPriceUpdateInterval;
     }
 
-    function updateFundingStartBlock(uint256 newFundingStartBlock) external onlyPrimaryWallet {
-        require(block.number < fundingStartBlock);
-        require(block.number < newFundingStartBlock);
-        fundingStartBlock = newFundingStartBlock;
+    function updateStartBlock(uint256 newStartBlock) external onlyPrimaryWallet {
+        require(block.number < startBlock);
+        require(block.number < newStartBlock);
+        startBlock = newStartBlock;
     }
 
-    function updateFundingEndBlock(uint256 newFundingEndBlock) external onlyPrimaryWallet {
-        require(block.number < fundingEndBlock);
-        require(block.number < newFundingEndBlock);
-        fundingEndBlock = newFundingEndBlock;
+    function updateEndBlock(uint256 newEndBlock) external onlyPrimaryWallet {
+        require(block.number < endBlock);
+        require(block.number < newEndBlock);
+        endBlock = newEndBlock;
     }
 
     function halt() external onlyPrimaryWallet {
@@ -294,7 +298,7 @@ contract IsonexTest is ERC20 {
     }
 
     function enableTrading() external onlyPrimaryWallet {
-        require(block.number > fundingEndBlock);
+        require(block.number > endBlock);
         tradeable = true;
     }
 

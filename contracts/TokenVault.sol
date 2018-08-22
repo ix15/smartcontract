@@ -6,7 +6,7 @@ contract TokenVault {
 
     ERC20Interface public IsonexContract;
     address beneficiary;
-    uint256 public fundingEndBlock;
+    uint256 public endBlock;
 
 
     bool private initClaim = false; // state tracking variables
@@ -30,11 +30,11 @@ contract TokenVault {
         fourthRelease
     }
 
-    function TokenVault(address _contractAddress, uint256 fundingEndBlockInput) public {
+    function TokenVault(address _contractAddress, uint256 endBlockInput) public {
         require(_contractAddress != address(0));
         IsonexContract = ERC20Interface(_contractAddress);
         beneficiary = msg.sender;
-        fundingEndBlock = fundingEndBlockInput;
+        endBlock = endBlockInput;
     }
 
     function changeBeneficiary(address newBeneficiary) external {
@@ -43,11 +43,11 @@ contract TokenVault {
         beneficiary = newBeneficiary;
     }
 
-    function updateFundingEndBlock(uint256 newFundingEndBlock) external {
+    function updateEndBlock(uint256 newEndBlock) external {
         require(msg.sender == beneficiary);
-        require(block.number < fundingEndBlock);
-        require(block.number < newFundingEndBlock);
-        fundingEndBlock = newFundingEndBlock;
+        require(block.number < endBlock);
+        require(block.number < newEndBlock);
+        endBlock = newEndBlock;
     }
 
     function checkBalance() public constant returns (uint256 tokenBalance) {
@@ -56,7 +56,7 @@ contract TokenVault {
 
     function claim() external {
         require(msg.sender == beneficiary);
-        require(block.number > fundingEndBlock);
+        require(block.number > endBlock);
         uint256 balance = IsonexContract.balanceOf(this);
         // in reverse order so stages changes don't carry within one claim
         fourth_release(balance);
@@ -70,12 +70,15 @@ contract TokenVault {
         stage = Stages(uint256(stage) + 1);
     }
 
+    // first claim is 4% + 1% for team (5 / 9 = 0.5555555555555556%)
+    // second is 1%
+    // third is 1%
     function init_claim(uint256 balance) private atStage(Stages.initClaim) {
         firstRelease = now + 26 weeks; // assign 4 claiming times
         secondRelease = firstRelease + 26 weeks;
         thirdRelease = secondRelease + 26 weeks;
         fourthRelease = thirdRelease + 26 weeks;
-        uint256 amountToTransfer = safeMul(balance, 53846153846) / 100000000000;
+        uint256 amountToTransfer = safeMul(balance, 5555555555555556) / 10000000000000000;
         IsonexContract.transfer(beneficiary, amountToTransfer); // now 46.153846154% tokens left
         nextStage();
     }
