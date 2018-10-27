@@ -8,10 +8,7 @@ contract TokenVault {
     address beneficiary;
     uint256 public endBlock;
 
-
-    bool private initClaim = false; // state tracking variables
-
-    uint256 public firstRelease; // vesting times
+    uint256 public firstRelease;
     uint256 public secondRelease;
     uint256 public thirdRelease;
     uint256 public fourthRelease;
@@ -69,6 +66,8 @@ contract TokenVault {
     function nextStage() private {
         stage = Stages(uint256(stage) + 1);
     }
+
+    // 9.090909090909091 % of all IX15 tokens are held by this contract
 
     // first claim is 4% + 1% for team (5 / 9 = 0.5555555555555556%)
     // second is 1%

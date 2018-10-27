@@ -1,27 +1,16 @@
 pragma solidity ^0.4.20;
-// check public fields
 
 import "./ERC20.sol";
 
 contract IsonexTest is ERC20 {
 
     // 10M + 100K 
-    uint256 public tokenCap = 110000000 * 10**18;
+    uint256 public tokenCap = 55000000 * 10**18;
 
     uint256 public minDepositAmount = 0.04 ether;
 
-    bool public halted = false;
+    bool public depositsHalted = false;
     bool public tradeable = false;
-
-    // The number of Isonex tokens per Ether
-    struct Price { uint256 numerator; uint256 denominator; } 
-    Price public currentPrice;
-
-    mapping (uint256 => Price) public priceHistory;
-    uint256 public currentPriceTimeSpan = 0;
-
-     // The amount of time that the secondary wallet must wait between price updates
-    uint256 public priceUpdateInterval = 1 hours;
 
     uint256 public startBlock;
     uint256 public endBlock;
@@ -33,27 +22,35 @@ contract IsonexTest is ERC20 {
 
     mapping (address => bool) public whitelist;
 
-    // time for each withdrawal is set to the currentPriceTimeSpan
+    // Conversion rate from IX15 to ETH
+    struct Price { uint256 numerator; uint256 denominator; } 
+    Price public currentPrice;
+
+     // The amount of time that the secondary wallet must wait between price updates
+    uint256 public priceUpdateInterval = 1 hours;
+
+    mapping (uint256 => Price) public priceHistory;
+    uint256 public currentPriceHistoryIndex = 0;
+
+    // time for each withdrawal is set to the currentPriceHistoryIndex
     struct WithdrawalRequest { uint256 nummberOfTokens; uint256 time; }
     mapping (address => WithdrawalRequest) withdrawalRequests;
-
 
     function IsonexTest(address newSecondaryWallet, uint256 newPriceNumerator, uint256 newStartBlock, uint256 newEndBlock) public {
         require(newSecondaryWallet != address(0));
         require(newPriceNumerator > 0);
         name = "IsonexTest";
-        symbol = "IX25Test";
+        symbol = "IX15Test";
         decimals = 18;
         primaryWallet = msg.sender;
         secondaryWallet = newSecondaryWallet;
         whitelist[primaryWallet] = true;
         whitelist[secondaryWallet] = true;
-        currentPrice = Price(newPriceNumerator, 1000);
         startBlock = newStartBlock;
         endBlock = newEndBlock;
-        currentPriceTimeSpan = now;
+        currentPrice = Price(newPriceNumerator, 1000);
+        currentPriceHistoryIndex = now;
     }
-
     
     function setVestingContract(address newVestingContract) external onlyPrimaryWallet {
         require(newVestingContract != address(0));
@@ -62,19 +59,22 @@ contract IsonexTest is ERC20 {
         hasVestingContract = true;
     }
 
-    // allows secondaryWallet to update the price within a time contstraint, allows primaryWallet complete control
-    function updatePrice(uint256 newNumerator) external onlyManagingWallets {
+    // Primary and Secondary wallets may updated the current price. Secondary wallet has time and change size constrainst
+    function updatePrice(uint256 newNumerator) external onlyPrimaryAndSecondaryWallets {
         require(newNumerator > 0);
-        applySecondaryWalletChangeRestrictions(newNumerator);
+        checkSecondaryWalletRestrictions(newNumerator);
+
         currentPrice.numerator = newNumerator;
-        // maps time to new Price (if not during ICO)
-        priceHistory[currentPriceTimeSpan] = currentPrice;
-        currentPriceTimeSpan = now;
-        emit PriceUpdate(newNumerator, currentPrice.denominator);
+
+        // After the token sale, map time to new Price
+        priceHistory[currentPriceHistoryIndex] = currentPrice;
+        currentPriceHistoryIndex = now;
+        emit PriceUpdated(newNumerator, currentPrice.denominator);
     }
 
-    // secondaryWallet can only increase price by max 20% and only every priceUpdateInterval
-    function applySecondaryWalletChangeRestrictions (uint256 newNumerator) private onlySecondaryWallet priceUpdateIntervalElapsed newNumeratorGreater(newNumerator) {
+    // secondaryWallet can only increase price by up to 20% and only every priceUpdateInterval
+    function checkSecondaryWalletRestrictions (uint256 newNumerator) view private 
+      onlySecondaryWallet priceUpdateIntervalElapsed ifNewNumeratorGreater(newNumerator) {
         uint256 percentageDiff = safeSub(safeMul(newNumerator, 100) / currentPrice.numerator, 100);
         require(percentageDiff <= 20);
     }
@@ -83,10 +83,54 @@ contract IsonexTest is ERC20 {
         require(block.number > endBlock);
         require(newDenominator > 0);
         currentPrice.denominator = newDenominator;
-        // maps time to new Price
-        priceHistory[currentPriceTimeSpan] = currentPrice;
-        currentPriceTimeSpan = now;
-        emit PriceUpdate(currentPrice.numerator, newDenominator);
+        // map time to new Price
+        priceHistory[currentPriceHistoryIndex] = currentPrice;
+        currentPriceHistoryIndex = now;
+        emit PriceUpdated(currentPrice.numerator, newDenominator);
+    }
+
+    function processDeposit(address participant, uint numberOfTokens) external onlyPrimaryWallet {
+        require(block.number < endBlock);
+        require(participant != address(0));
+        whitelist[participant] = true;
+        allocateTokens(participant, numberOfTokens);
+        emit Whitelisted(participant);
+        emit DepositProcessed(participant, numberOfTokens);
+    }
+
+    // When Eether is sent directly to the contract
+    function() public payable {
+        buyTokensFor(msg.sender);
+    }
+
+    function buyTokens() external payable {
+        buyTokensFor(msg.sender);
+    }
+    
+    function buyTokensFor(address participant) public payable onlyWhitelist {
+        require(!depositsHalted);
+        require(participant != address(0));
+        require(msg.value >= minDepositAmount);
+        require(block.number >= startBlock && block.number < endBlock);
+
+        uint256 tokensToBuy = safeMul(msg.value, currentPrice.numerator) / getDenominator();
+        allocateTokens(participant, tokensToBuy);
+
+        // send ether to primaryWallet
+        primaryWallet.transfer(msg.value);
+
+        emit UserDeposited(msg.sender, participant, msg.value, tokensToBuy);
+    }
+
+    function getDenominator() public constant returns (uint256) {
+        uint256 blocksSinceStartBlock = safeSub(block.number, startBlock);
+        if (blocksSinceStartBlock < 5760) { // 24*60*60/15 = 5760 = 1 Day
+            return currentPrice.denominator;
+        } else if (blocksSinceStartBlock < 161280 ) { // 4*7*24*60*60/15 = 161280 = 1 month
+            return safeMul(currentPrice.denominator, 1025) / 1000; // 1.025 usd per token
+        } else {
+            return safeMul(currentPrice.denominator, 105) / 100; // 1.05 usd per token
+        }
     }
 
     // 9.090909090909091 % of 99 => 9% of 100
@@ -99,69 +143,25 @@ contract IsonexTest is ERC20 {
         require(hasVestingContract);
 
         // 9.090909090909091% of total allocated for PR, Marketing, Team, Advisors
-        uint256 additionTokens = numberOfTokens / 10;
+        uint256 additionalTokens = numberOfTokens / 10;
            
         // check that token cap is not exceeded
-        uint256 totalNumberOfTokens = safeAdd(numberOfTokens, additionTokens);
-        require(safeAdd(totalSupply, totalNumberOfTokens) <= tokenCap);
+        uint256 totalNewTokens = safeAdd(numberOfTokens, additionalTokens);
+        require(safeAdd(totalSupply, totalNewTokens) <= tokenCap);
         
         // increase token supply, assign tokens to participant
-        totalSupply = safeAdd(totalSupply, totalNumberOfTokens);
+        totalSupply = safeAdd(totalSupply, totalNewTokens);
         balances[participant] = safeAdd(balances[participant], numberOfTokens);
-        balances[vestingContract] = safeAdd(balances[vestingContract], additionTokens);
+        balances[vestingContract] = safeAdd(balances[vestingContract], additionalTokens);
 
         emit Transfer(address(0), participant, numberOfTokens);
-        emit Transfer(address(0), vestingContract, additionTokens);
+        emit Transfer(address(0), vestingContract, additionalTokens);
     }
 
-    function allocatePresaleTokens(address participant, uint numberOfTokens) external onlyPrimaryWallet {
-        require(block.number < endBlock);
-        require(participant != address(0));
-        whitelist[participant] = true;
-        allocateTokens(participant, numberOfTokens);
-        emit Whitelisted(participant);
-        emit AllocatePresale(participant, numberOfTokens);
-    }
-
-    function verifyParticipant(address participant) external onlyManagingWallets {
+    function verifyParticipant(address participant) external onlyPrimaryAndSecondaryWallets {
         whitelist[participant] = true;
         emit Whitelisted(participant);
     }
-
-    function deposit() external payable {
-        depositTo(msg.sender);
-    }
-    
-    function depositTo(address participant) public payable onlyWhitelist {
-        require(!halted);
-        require(participant != address(0));
-        require(msg.value >= minDepositAmount);
-        require(block.number >= startBlock && block.number < endBlock);
-        uint256 tokensToBuy = safeMul(msg.value, currentPrice.numerator) / getStagedDenominator();
-        allocateTokens(participant, tokensToBuy);
-        // send ether to primaryWallet
-        primaryWallet.transfer(msg.value);
-        //Buy(msg.sender, participant, msg.value, tokensToBuy);
-        emit UserDeposited(msg.sender, participant, msg.value, tokensToBuy);
-    }
-
-    function getStagedDenominator() public constant returns (uint256) {
-        uint256 blocksSinceStartBlock = safeSub(block.number, startBlock);
-        //if (icoDuration < 2880) { // #blocks = 24*60*60/30 = 2880
-        if (blocksSinceStartBlock < 5760) { //24*60*60/15 1 Day
-            return currentPrice.denominator;
-        //} else if (icoDuration < 80640 ) { // #blocks = 4*7*24*60*60/30 = 80640
-        } else if (blocksSinceStartBlock < 11520 ) { // 2 Days
-            return safeMul(currentPrice.denominator, 105) / 100;
-        } else {
-            return safeMul(currentPrice.denominator, 110) / 100;
-        }
-    }
-
-
-
-
-
 
     function requestWithdrawal(uint256 amountOfTokensToWithdraw) external isTradeable onlyWhitelist {
         require(block.number > endBlock);
@@ -170,33 +170,30 @@ contract IsonexTest is ERC20 {
         require(balanceOf(participant) >= amountOfTokensToWithdraw);
         require(withdrawalRequests[participant].nummberOfTokens == 0); // participant cannot have outstanding withdrawals
         balances[participant] = safeSub(balanceOf(participant), amountOfTokensToWithdraw);
-        withdrawalRequests[participant] = WithdrawalRequest({nummberOfTokens: amountOfTokensToWithdraw, time: currentPriceTimeSpan});
+        withdrawalRequests[participant] = WithdrawalRequest({nummberOfTokens: amountOfTokensToWithdraw, time: currentPriceHistoryIndex});
         emit WithdrawalRequested(participant, amountOfTokensToWithdraw);
     }
 
     function withdraw() external {
         address participant = msg.sender;
         uint256 nummberOfTokens = withdrawalRequests[participant].nummberOfTokens;
-        require(nummberOfTokens > 0); // participant must have requested a withdrawal
+        require(nummberOfTokens > 0);
         uint256 requestTime = withdrawalRequests[participant].time;
-        // obtain the next price that was set after the request
-        Price price = priceHistory[requestTime];
-        require(price.numerator > 0); // price must have been set
+        Price storage price = priceHistory[requestTime];
+        require(price.numerator > 0);
         uint256 etherAmount = safeMul(nummberOfTokens, price.denominator) / price.numerator;
         withdrawalRequests[participant].nummberOfTokens = 0;
 		
-        // Make sure we have enough ether in the contract to send to the participant
-        assert(this.balance >= etherAmount);
-
-        // if contract ethbal > then send + transfer tokens to primaryWallet, otherwise give tokens back
-        if (this.balance >= etherAmount) {
-            // Move the Isonex tokens to the ether wallet
+        // If the contract has enough Ether, then send the Ether to the participant and send the IX15 tokens to the primary wallet
+        if (address(this).balance >= etherAmount) {
+            // Move the Isonex tokens to the primary wallet
             balances[primaryWallet] = safeAdd(balances[primaryWallet], nummberOfTokens);
             // Send ether from the contract wallet to the participant
             participant.transfer(etherAmount);
             emit Withdrew(participant, etherAmount, nummberOfTokens);
         }
         else {
+            // Send the tokens back to the participant
             balances[participant] = safeAdd(balances[participant], nummberOfTokens);
             emit Withdrew(participant, etherAmount, 0); // failed withdrawal
         }
@@ -206,21 +203,21 @@ contract IsonexTest is ERC20 {
         require(amountTokensToWithdraw > 0);
         require(balanceOf(msg.sender) >= amountTokensToWithdraw);
         uint256 withdrawValue = safeMul(amountTokensToWithdraw, currentPrice.denominator) / currentPrice.numerator;
-        require(this.balance >= withdrawValue);
+        require(address(this).balance >= withdrawValue);
         return withdrawValue;
     }
 
-    // allow primaryWallet or secondaryWallet to add ether to contract
-    function addLiquidity() external onlyManagingWallets payable {
+    // allow the primaryWallet or secondaryWallet to add Ether to the contract
+    function addLiquidity() external onlyPrimaryAndSecondaryWallets payable {
         require(msg.value > 0);
         emit LiquidityAdded(msg.value);
     }
 
-    // allow primaryWallet to remove ether from contract
-    function removeLiquidity(uint256 amount) external onlyManagingWallets {
-        require(amount <= this.balance);
+    // allow the primaryWallet or secondaryWallet to remove Ether from contract
+    function removeLiquidity(uint256 amount) external onlyPrimaryAndSecondaryWallets {
+        require(amount <= address(this).balance);
         primaryWallet.transfer(amount);
-        emit RemoveLiquidity(amount);
+        emit LiquidityRemoved(amount);
     }
 
     function changePrimaryWallet(address newPrimaryWallet) external onlyPrimaryWallet {
@@ -249,24 +246,17 @@ contract IsonexTest is ERC20 {
         endBlock = newEndBlock;
     }
 
-    function halt() external onlyPrimaryWallet {
-        halted = true;
+    function haltDeposits() external onlyPrimaryWallet {
+        depositsHalted = true;
     }
 
-    function unhalt() external onlyPrimaryWallet {
-        halted = false;
+    function unhaltDeposits() external onlyPrimaryWallet {
+        depositsHalted = false;
     }
 
     function enableTrading() external onlyPrimaryWallet {
         require(block.number > endBlock);
         tradeable = true;
-    }
-
-    // if ether is sent this contract, then handle it
-    function() public payable {
-		// TODO: why do we need this check. Consider removing it. Complier is complaining and online they say to never use origin
-        //require(tx.origin == msg.sender); // important to find out what this is??
-        depositTo(msg.sender);
     }
 
     function claimTokens(address _token) external onlyPrimaryWallet {
@@ -276,7 +266,7 @@ contract IsonexTest is ERC20 {
         token.transfer(primaryWallet, balance);
     }
 
-    // prevent transfers until trading allowed
+    // override transfer and transferFrom to add is tradeable modifier
     function transfer(address _to, uint256 _value) public isTradeable returns (bool success) {
         return super.transfer(_to, _value);
     }
@@ -285,41 +275,22 @@ contract IsonexTest is ERC20 {
         return super.transferFrom(_from, _to, _value);
     }
 	
-
-
     // I added these, remove them
+
     function isInWhitelist(address participant) external constant returns (bool) {
         return whitelist[participant];
     }
 
-    function getContractBalance() public constant returns (uint256) {
-        return this.balance;
-    }
-
-    function getPrimaryWalletBalance() public constant returns (uint256) {
-        return primaryWallet.balance;
-    }
-
-    function getVestingContractBalance() public constant returns (uint256) {
-        return balances[vestingContract];
-    }
-
-    function pendingWithdrawalRequestOf(address participant) constant returns (uint256 tokens) {
-        return withdrawalRequests[participant].nummberOfTokens;
-    }
-
-
     // Events
 
-    event PriceUpdate(uint256 numerator, uint256 denominator);
-    event AllocatePresale(address indexed participant, uint256 numberOfTokens);
+    event PriceUpdated(uint256 numerator, uint256 denominator);
+    event DepositProcessed(address indexed participant, uint256 numberOfTokens);
     event Whitelisted(address indexed participant);
     event WithdrawalRequested(address indexed participant, uint256 numberOfTokens);
     event Withdrew(address indexed participant, uint256 etherAmount, uint256 numberOfTokens);
     event LiquidityAdded(uint256 ethAmount);
-    event RemoveLiquidity(uint256 ethAmount);
+    event LiquidityRemoved(uint256 ethAmount);
     event UserDeposited(address indexed participant, address indexed beneficiary, uint256 ethValue, uint256 numberOfTokens);
-
 
     // Modifiers
 
@@ -338,17 +309,17 @@ contract IsonexTest is ERC20 {
 		_;
     }
 
-    modifier onlyManagingWallets {
+    modifier onlyPrimaryAndSecondaryWallets {
         require(msg.sender == secondaryWallet || msg.sender == primaryWallet);
         _;
     }
 
     modifier priceUpdateIntervalElapsed {
-        require(safeSub(now, priceUpdateInterval) >= currentPriceTimeSpan);
+        require(safeSub(now, priceUpdateInterval) >= currentPriceHistoryIndex);
         _;
     }
 
-    modifier newNumeratorGreater (uint256 newNumerator) {
+    modifier ifNewNumeratorGreater (uint256 newNumerator) {
         if (newNumerator > currentPrice.numerator)
         _;
     }
