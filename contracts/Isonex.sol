@@ -4,8 +4,8 @@ import "./ERC20.sol";
 
 contract IsonexTest is ERC20 {
 
-    // 10M + 100K 
-    uint256 public tokenCap = 55000000 * 10**18;
+    // 15M + Team (15 * 7 / 90)
+    uint256 public tokenCap = 16166667 * 10**18;
 
     uint256 public minDepositAmount = 0.04 ether;
 
@@ -14,6 +14,9 @@ contract IsonexTest is ERC20 {
 
     uint256 public startBlock;
     uint256 public endBlock;
+
+    uint256 public stage1EndBlocksFromStart = 5760; // 24*60*60/15 = 5760 = 1 Day
+    uint256 public stage2EndBlocksFromStart = 161280; // 4*7*24*60*60/15 = 161280 = 1 month
 
     address public primaryWallet;
     address public secondaryWallet;
@@ -124,26 +127,34 @@ contract IsonexTest is ERC20 {
 
     function getDenominator() public constant returns (uint256) {
         uint256 blocksSinceStartBlock = safeSub(block.number, startBlock);
-        if (blocksSinceStartBlock < 5760) { // 24*60*60/15 = 5760 = 1 Day
+        if (blocksSinceStartBlock < stage1EndBlocksFromStart) { // 24*60*60/15 = 5760 = 1 Day
             return currentPrice.denominator;
-        } else if (blocksSinceStartBlock < 161280 ) { // 4*7*24*60*60/15 = 161280 = 1 month
+        } else if (blocksSinceStartBlock < stage2EndBlocksFromStart ) { // 4*7*24*60*60/15 = 161280 = 1 month
             return safeMul(currentPrice.denominator, 1025) / 1000; // 1.025 usd per token
         } else {
             return safeMul(currentPrice.denominator, 105) / 100; // 1.05 usd per token
         }
     }
 
-    // 9.090909090909091 % of 99 => 9% of 100
-    // 9.090909090909091*(X+Y)/100=Y
-    // X=100Y/9.090909090909091 - y
-    // X = 11Y - Y
-    // Y = X/10
-    
+    // 7 * 100 / 97 =  7.216494845360825 
+
+    // 7.216494845360825 % of 97 => 7% of 100
+    // 7.216494845360825*(X+Y)/100=Y
+    // X=100Y/7.216494845360825 - y
+    // X = 13.85714285714286 Y - Y
+    // X = 12.85714285714286 * Y
+    // Y = X/12.85714285714286
+
+    // Or
+    // (7 * 100 / 97)*(X+Y)/100=Y
+    // ...
+    // Y = 7 X / 90
+
     function allocateTokens(address participant, uint256 numberOfTokens) private {
         require(hasVestingContract);
 
         // 9.090909090909091% of total allocated for PR, Marketing, Team, Advisors
-        uint256 additionalTokens = numberOfTokens / 10;
+        uint256 additionalTokens = safeMul(numberOfTokens, 7) / 90;
            
         // check that token cap is not exceeded
         uint256 totalNewTokens = safeAdd(numberOfTokens, additionalTokens);
@@ -244,6 +255,18 @@ contract IsonexTest is ERC20 {
         require(block.number < endBlock);
         require(block.number < newEndBlock);
         endBlock = newEndBlock;
+    }
+
+    function updateStage1EndBlocksFromStart(uint256 newStage1EndBlocksFromStart) external onlyPrimaryWallet {
+        require(block.number < safeAdd(startBlock, stage1EndBlocksFromStart));
+        require(block.number < safeAdd(startBlock, newStage1EndBlocksFromStart));
+        stage1EndBlocksFromStart = newStage1EndBlocksFromStart;
+    }
+
+    function updateStage2EndBlocksFromStart(uint256 newStage2EndBlocksFromStart) external onlyPrimaryWallet {
+        require(block.number < safeAdd(startBlock, stage2EndBlocksFromStart));
+        require(block.number < safeAdd(startBlock, newStage2EndBlocksFromStart));
+        stage2EndBlocksFromStart = newStage2EndBlocksFromStart;
     }
 
     function haltDeposits() external onlyPrimaryWallet {
