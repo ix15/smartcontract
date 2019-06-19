@@ -67,17 +67,19 @@ contract TokenVault {
         stage = Stages(uint256(stage) + 1);
     }
 
-    // 9.090909090909091 % of all IX15 tokens are held by this contract
+    // 7.216494845360825 % (7 * 100 / 97) of all IX15 tokens are held by this contract
 
-    // first claim is 4% + 1% for team (5 / 9 = 0.5555555555555556%)
-    // second is 1%
-    // third is 1%
+    // first claim releaes 2 units for expenses and 1 unit for team (3 / 7 = 0.4285714285714286 % of contract balance)
+    // second claim releases is 1 unit
+    // third claim releases is 1 unit
+    // fourth claim releases is 1 unit
+    // fifth claim releases is 1 unit
     function init_claim(uint256 balance) private atStage(Stages.initClaim) {
         firstRelease = now + 26 weeks; // assign 4 claiming times
         secondRelease = firstRelease + 26 weeks;
         thirdRelease = secondRelease + 26 weeks;
         fourthRelease = thirdRelease + 26 weeks;
-        uint256 amountToTransfer = safeMul(balance, 5555555555555556) / 10000000000000000;
+        uint256 amountToTransfer = safeMul(balance, 4285714285714286) / 10000000000000000;
         IsonexContract.transfer(beneficiary, amountToTransfer); // now 46.153846154% tokens left
         nextStage();
     }
